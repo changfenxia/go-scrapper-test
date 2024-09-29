@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"log"
-
+	"github.com/changfenxia/scrapper-test/worker"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 var (
@@ -32,12 +32,27 @@ func init() {
 }
 
 // runParser запускает парсер с заданными параметрами
-func runParser(cmd *cobra.Command, args []string) {
-	log.Println("Запуск парсера с параметрами:")
-	log.Printf("Тип парсинга: %d\n", parseType)
-	log.Printf("Количество рецептов: %d\n", maxRecipes)
-	log.Printf("Количество одновременных потоков: %d\n", concurrency)
+func runParser(logger *zap.Logger) {
+	// Создание воркеров
+	categoryWorker := worker.NewCategoryWorker(logger)
+	recipeWorker := worker.NewRecipeWorker(logger)
 
-	// Здесь добавьте логику запуска парсера
-	// Например, вызов функции, которая запускает парсинг с указанными параметрами.
+	// Парсинг категорий
+	categories, err := categoryWorker.Start()
+	if err != nil {
+		logger.Fatal("Error parsing categories", zap.Error(err))
+	}
+
+	// Парсинг рецептов в каждой категории
+	for _, category := range categories {
+		recipes, err := recipeWorker.Start(category)
+		if err != nil {
+			logger.Error("Error parsing recipes", zap.String("category", category.Name), zap.Error(err))
+		}
+
+		// Логирование каждого рецепта
+		for _, recipe := range recipes {
+			logger.Info("Recipe processed", zap.String("Name", recipe.Name))
+		}
+	}
 }
