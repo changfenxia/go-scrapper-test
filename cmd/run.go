@@ -1,9 +1,12 @@
 package cmd
 
 import (
-	"github.com/changfenxia/scrapper-test/worker"
+	"log"
+
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+
+	"github.com/seniorcat/scraper/worker" // Укажите правильный путь к пакету cmd
 )
 
 var (
@@ -32,27 +35,67 @@ func init() {
 }
 
 // runParser запускает парсер с заданными параметрами
-func runParser(logger *zap.Logger) {
-	// Создание воркеров
+func runParser(cmd *cobra.Command, args []string) {
+	log.Println("Запуск парсера с параметрами:")
+	log.Printf("Тип парсинга: %d\n", parseType)
+	log.Printf("Количество рецептов: %d\n", maxRecipes)
+	log.Printf("Количество одновременных потоков: %d\n", concurrency)
+
+	// Инициализация логгера zap
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("Не удалось инициализировать логгер: %v", err)
+	}
+	defer logger.Sync() // Синхронизация логов перед завершением работы
+
+	// Создание воркеров для категорий и рецептов
 	categoryWorker := worker.NewCategoryWorker(logger)
 	recipeWorker := worker.NewRecipeWorker(logger)
 
-	// Парсинг категорий
-	categories, err := categoryWorker.Start()
-	if err != nil {
-		logger.Fatal("Error parsing categories", zap.Error(err))
-	}
+	// В зависимости от parseType запускаем парсинг
+	switch parseType {
+	case 1:
+		// Полный парсинг: категории + рецепты
+		log.Println("Запуск полного парсинга...")
 
-	// Парсинг рецептов в каждой категории
-	for _, category := range categories {
-		recipes, err := recipeWorker.Start(category)
+		// Парсинг категорий
+		categories, err := categoryWorker.Start()
 		if err != nil {
-			logger.Error("Error parsing recipes", zap.String("category", category.Name), zap.Error(err))
+			logger.Error("Ошибка при парсинге категорий", zap.Error(err))
+			return
 		}
 
-		// Логирование каждого рецепта
-		for _, recipe := range recipes {
-			logger.Info("Recipe processed", zap.String("Name", recipe.Name))
+		// Логирование найденных категорий
+		for _, category := range categories {
+			logger.Info("Категория", zap.String("Name", category.Name), zap.String("Href", category.Href))
+
+			// Парсинг рецептов в каждой категории
+			recipes, err := recipeWorker.Start(category)
+			if err != nil {
+				logger.Error("Ошибка при парсинге рецептов", zap.String("Category", category.Name), zap.Error(err))
+				continue
+			}
+
+			// Логирование найденных рецептов
+			for _, recipe := range recipes {
+				logger.Info("Рецепт", zap.String("Name", recipe.Name), zap.String("Href", recipe.Href))
+			}
 		}
+
+	case 2:
+		// Парсинг только категорий
+		log.Println("Запуск парсинга категорий...")
+		categories, err := categoryWorker.Start()
+		if err != nil {
+			logger.Error("Ошибка при парсинге категорий", zap.Error(err))
+			return
+		}
+
+		// Логирование найденных категорий
+		for _, category := range categories {
+			logger.Info("Категория", zap.String("Name", category.Name), zap.String("Href", category.Href))
+		}
+	default:
+		log.Printf("Неизвестный тип парсинга: %d\n", parseType)
 	}
 }
